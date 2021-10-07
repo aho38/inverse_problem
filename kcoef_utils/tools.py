@@ -28,81 +28,13 @@ def assembleMatrix(k, h, dt, n):
     n - number of interior points
     '''
     diagonals = np.zeros((3, n))   # 3 diagonals
-    diagonals[0,:] = -1.0/h**2
-    diagonals[1,:] =  2.0/h**2
-    diagonals[2,:] = -1.0/h**2
+    diagonals[0,:] =  1.0/h**2
+    diagonals[1,:] = -2.0/h**2
+    diagonals[2,:] =  1.0/h**2
     K = k*sp.spdiags(diagonals, [-1,0,1], n,n)
     M = sp.spdiags(np.ones(n), 0, n,n)
     
-    return M + dt*K
-    
-
-def stepFwd(m, k, h, dt, n, nt):
-    '''
-    m - initial condition
-    k - diffusion coefficient
-    h - spacing
-    dt - time step
-    nt - number of timesteps
-    '''
-    A = assembleMatrix(k, h, dt, n)
-    u_old = m.copy()
-    for i in np.arange(nt):
-        u = la.spsolve(A, u_old)
-        u_old[:] = u
-        
-    return u    
-    
-def assembleINVMatrix(T, h, n):
-    '''
-
-    get matrix diag(k * dT/dx_i)
-
-    T - temperature
-    h - spacing of your mesh/grid
-    n  - number of interior points
-    '''
-    diagonals = np.zeros((2,n))
-    diagonals[0, :] = -1.0/h
-    diagonals[1, :] =  1.0/h
-
-    dTdx = sp.spdiags(diagonals, [0,1], n, n) * T
-    dTdx = sp.spdiags(dTdx, [0], n, n)
-    return dTdx
-    
-
-def solveINVFWD(T, k, h, n):
-    '''
-    m - initial condition
-    k - diffusion coefficient
-    h - spacing
-    dt - time step
-    nt - number of timesteps
-    '''
-    dTdx = assembleINVMatrix(T, h, n)
-
-    int_dTdx = dTdx * (k * np.ones(n))
-        
-    return int_dTdx, dTdx
-
-def computeEigendecomposition(k, h, dt, n, nt):
-    ## Compute F as a dense matrix
-    F = np.zeros((n,n))
-    m_i = np.zeros(n)
-    
-    for i in np.arange(n):
-        m_i[i] = 1.0
-        F[:,i] = stepFwd(m_i, k, h, dt, n, nt)
-        m_i[i] = 0.0
-    
-    ## solve the eigenvalue problem
-    lmbda, U = np.linalg.eigh(F)
-    ## sort eigenpairs in decreasing order
-    lmbda[:] = lmbda[::-1]
-    lmbda[lmbda < 0.] = 0.0
-    U[:] = U[:,::-1]
-    
-    return lmbda, U 
+    return M - dt*K
 
 class inv_solver:
     
@@ -148,16 +80,21 @@ class inv_solver:
             m = T_i
             self.temps[...,i+1] = T_i
 
-    def solveINVFWD(self, T):
+    def int_dTdt(self, dTdt, i):
         '''
-        T - temperature data, (a vector)
-        '''
-        n = self.nx - 1
-        dTdx = assembleINVMatrix(T, self.h, n)
+        int_-D^z dT/dt = k dT
 
-        int_dTdx = dTdx * (self.k * np.ones(n))
+        Reimann Summ
+
+        T - temperature data, (a vector)
+        i - the index number of the grid which correspond to heigh z we're integrating to
+        '''
+        if i >= self.nx:
+            raise Exception("grid index out of range. Value should be between 0 and {3:}".format(self.nx-1))
+
+        int_dTdx = np.sum(dTdt[0:i]) * self.h
             
-        return int_dTdx, dTdx
+        return int_dTdx
 
     def solveTikhonov(self, d, F, alpha):    
         H = np.dot( F.transpose(), F) + alpha*np.identity(F.shape[1])
